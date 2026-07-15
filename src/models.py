@@ -1,3 +1,4 @@
+from matplotlib.pylab import gamma
 import numpyro 
 import numpyro.distributions as dist
 from jax import numpy as jnp 
@@ -118,21 +119,24 @@ def serve_return_surface_ar_model(X_intercept, n_players,
             
     # general idea for AR(1) here 
     #https://stackoverflow.com/questions/78209454/numpyro-ar1-mean-switching-model-sampling-incongrouencies
-    def ar_effect(prev_state, update):
-        next_state = gamma_serve * prev_state + update 
-        return next_state, next_state 
+    def make_ar_effect(gamma):
+        def ar_effect(prev_state, update):
+            next_state = gamma * prev_state + update
+            return next_state, next_state
+        return ar_effect
     
-    _, serve_effects_scan = lax.scan(ar_effect, player_serve, player_serve_next)
+    #_, serve_effects_scan = lax.scan(ar_effect, player_serve, player_serve_next)
+    _, serve_effects_scan = lax.scan(make_ar_effect(gamma_serve), player_serve, player_serve_next)
     serve_effects = jnp.concatenate([player_serve[:, None], serve_effects_scan.T], axis = 1)
 
     # Returner
     mu_return = numpyro.sample("mu_ret", dist.Normal(0, 1))
     # AR effects - Return
-    gamma_return = numpyro.sample("gamma_serve", dist.Beta(3, 1))
+    gamma_return = numpyro.sample("gamma_return", dist.Beta(3, 1))
     # initial year variance
-    sigma_return_0 = numpyro.sample("sigma_serve_0", dist.HalfNormal(1))
+    sigma_return_0 = numpyro.sample("sigma_return_0", dist.HalfNormal(1))
     # future years variance
-    sigma_return_yr = numpyro.sample("sigma_serve_yr", dist.HalfNormal(1))
+    sigma_return_yr = numpyro.sample("sigma_return_yr", dist.HalfNormal(1))
     
     with numpyro.plate("players_returner", n_players):
         player_return = numpyro.sample("player_ret", dist.Normal(mu_return, sigma_return_0))
@@ -143,7 +147,8 @@ def serve_return_surface_ar_model(X_intercept, n_players,
                                                dist.Normal(mu_return, sigma_return_yr))
 
 
-    _, return_effects_scan = lax.scan(ar_effect, player_return, player_return_next)
+    #_, return_effects_scan = lax.scan(ar_effect, player_return, player_return_next)
+    _, return_effects_scan = lax.scan(make_ar_effect(gamma_return), player_return, player_return_next)
     return_effects = jnp.concatenate([player_return[:, None], return_effects_scan.T], axis = 1)
 
     # Surface 
